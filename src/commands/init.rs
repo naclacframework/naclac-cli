@@ -71,7 +71,7 @@ custom-panic = []
 debug-mode = []
 
 [dependencies]
-naclac-lang = "1.0.0"
+naclac-lang = "1.1.0"
 
 [lints.rust]
 unexpected_cfgs = {{ level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }}

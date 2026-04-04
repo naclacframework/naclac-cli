@@ -71,7 +71,7 @@ cpi = ["no-entrypoint"]
 default = []
 
 [dependencies]
-naclac-lang = "1.0.0"
+naclac-lang = "1.1.0"
 "#, snake_name);
 
     let lib_rs = format!(r#"use naclac_lang::prelude::*;
