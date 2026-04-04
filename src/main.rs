@@ -4,7 +4,7 @@ mod commands;
 
 #[derive(Parser)]
 #[command(name = "naclac")]
-#[command(about = "A hyper-optimized native Solana framework generator", long_about = None)]
+#[command(version, about = "A hyper-optimized native Solana framework generator", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -49,6 +49,25 @@ enum Commands {
     },
     /// Verifies the determinism of local codebase against an on-chain program
     Verify { program_id: Option<String> },
+    /// Checks the system environment for Naclac dependencies
+    Doctor,
+    /// Cleans the workspace by safely preserving deploy keys, or totally wiping with --hard
+    Clean {
+        /// Performs a destructive clean, wiping deploy keys in target/deploy!
+        #[arg(long)]
+        hard: bool,
+    },
+    /// Airdrops SOL to the current wallet configured in Naclac.toml
+    Airdrop {
+        /// Amount of SOL to airdrop (default: 1.0)
+        #[arg(default_value_t = 1.0)]
+        amount: f64,
+    },
+    /// Tails the logs for the target cluster (or specific program)
+    Logs {
+        /// Optional specific program ID to filter logs for
+        program_id: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -130,6 +149,13 @@ fn main() {
             for pid in pids {
                 commands::verify::execute(&pid);
             }
+        },
+        Commands::Doctor => commands::doctor::execute(),
+        Commands::Clean { hard } => commands::clean::execute(*hard),
+        Commands::Airdrop { amount } => commands::airdrop::execute(*amount),
+        Commands::Logs { program_id } => {
+            let pid = program_id.clone();
+            commands::logs::execute(pid.as_deref());
         },
     }
 }

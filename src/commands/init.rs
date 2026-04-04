@@ -93,8 +93,6 @@ pub mod errors;
 
 #[naclac_program]
 pub mod {} {{
-    use super::*;
-
     pub fn initialize(program_id: &Pubkey, accounts: &[AccountInfo], instruction_data: &[u8]) -> ProgramResult {{
         crate::instructions::initialize::initialize(program_id, accounts, instruction_data)
     }}
@@ -126,10 +124,15 @@ pub struct Counter {
     fs::write(program_dir.join("src/systems/mod.rs"), "pub mod math;\n").unwrap();
     let math_rs = r#"use naclac_lang::prelude::*;
 use crate::components::counter::Counter;
+use crate::errors::CounterError;
 
 #[system]
-pub fn process_increment(counter: &mut Counter) {
+pub fn process_increment(counter: &mut Counter) -> Result<u64, ProgramError> {
+    if counter.count >= 5 {
+        return Err(CounterError::MaxLimitReached.into());
+    }
     counter.count += 1;
+    Ok(counter.count)
 }
 "#;
     fs::write(program_dir.join("src/systems/math.rs"), math_rs).unwrap();
@@ -149,7 +152,6 @@ pub fn initialize(
     #[writable]
     payer: &AccountInfo,
     
-    // The framework handles the PDA derivation and space allocation automatically!
     #[pda([b"counter_v2"])]
     #[init(payer = "payer", component = "Counter")] 
     #[writable]
@@ -160,11 +162,8 @@ pub fn initialize(
     let mut data = counter_account.try_borrow_mut_data()?;
     let counter_struct = Counter::load_mut(&mut data)?;
 
-    // Set the initial state
     counter_struct.authority = *payer.key;
     counter_struct.count = 0;
-
-    msg!("🎉 Naclac Counter successfully initialized!");
 
     Ok(())
 }
@@ -188,21 +187,16 @@ pub fn increment(
     #[writable] 
     counter_account: &mut Counter,
 ) {
-    // 🛡️ 1. Security Check: Ensure only the owner can increment
     if counter_account.authority != *authority.key {
         return Err(CounterError::Unauthorized.into()); 
     }
 
-    // ⚙️ 2. Business Logic: Delegate math to the systems module
     let new_count = math::process_increment(counter_account)?;
 
-    // 📢 3. Events: Broadcast the state change to the network
     CounterIncremented {
         new_count,
         timestamp: unix_timestamp()?, 
     }.emit();
-
-    msg!("📈 Counter successfully incremented to: {}", new_count);
 
     Ok(())
 }
@@ -360,16 +354,29 @@ describe("Naclac Counter Test", () => {{
     .unwrap();
 
     println!("📦 Installing Node dependencies...");
+    let mut deps_installed = false;
+
     for pm in ["yarn", "pnpm", "npm"].iter() {
         if Command::new(pm).arg("--version").output().is_ok() {
             println!("   Using {} to install...", pm);
-            Command::new(pm)
+            
+            if let Ok(status) = Command::new(pm)
                 .arg("install")
                 .current_dir(&root)
-                .status()
-                .ok();
-            break;
+                .status() 
+            {
+                if status.success() {
+                    deps_installed = true;
+                    break;
+                } else {
+                    println!("   ⚠️ {} failed to install dependencies. Trying fallback...", pm);
+                }
+            }
         }
+    }
+
+    if !deps_installed {
+        println!("   ❌ Warning: All package managers failed to install dependencies (check your network). You can install them manually later.");
     }
     Command::new("git")
         .arg("init")

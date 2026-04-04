@@ -8,3 +8,7 @@ pub mod upgrade;
 pub mod verify;
 pub mod add;
 pub mod generate;
+pub mod doctor;
+pub mod clean;
+pub mod airdrop;
+pub mod logs;
