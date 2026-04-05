@@ -517,8 +517,32 @@ pub fn execute(program_id: Option<&str>, generate_client: bool) {
         }
 
         for func_name in instruction_order {
-            let ix_path = program_dir.join(format!("src/instructions/{}.rs", func_name));
-            if ix_path.exists() {
+            let mut found_path = None;
+            let mut dirs_to_visit = vec![program_dir.join("src/instructions")];
+            while let Some(dir) = dirs_to_visit.pop() {
+                if let Ok(entries) = fs::read_dir(&dir) {
+                    for entry in entries {
+                        if let Ok(entry) = entry {
+                            let path = entry.path();
+                            if path.is_dir() {
+                                dirs_to_visit.push(path);
+                            } else if path.is_file() {
+                                if let Some(name) = path.file_stem() {
+                                    if name.to_string_lossy() == func_name {
+                                        found_path = Some(path);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if found_path.is_some() {
+                    break;
+                }
+            }
+
+            if let Some(ix_path) = found_path {
                 let code = fs::read_to_string(&ix_path).unwrap();
                 let syntax_tree = syn::parse_file(&code).unwrap();
 
