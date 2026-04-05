@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use heck::ToSnakeCase;
+use heck::{ToSnakeCase, ToUpperCamelCase};
 
 pub fn execute(name: &str) {
     let root = Path::new(name);

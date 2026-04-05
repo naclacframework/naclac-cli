@@ -1,6 +1,6 @@
 use std::fs;
 use std::process::Command;
-use heck::ToSnakeCase;
+use heck::{ToSnakeCase, ToUpperCamelCase};
 
 pub fn execute(name: &str) {
     let current_dir = std::env::current_dir().unwrap();
