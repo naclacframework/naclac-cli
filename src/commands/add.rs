@@ -246,6 +246,8 @@ pub enum CounterError {
     } else {
         config_text.push_str(&format!("\n\n[programs.localnet]\n{} = \"{}\"", snake_name, address));
         fs::write(&config_path, config_text).unwrap();
+    }
+
     let type_name = {
         let mut c = snake_name.chars();
         match c.next() {
