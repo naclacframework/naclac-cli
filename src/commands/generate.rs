@@ -117,7 +117,7 @@ fn map_type_to_ts(idl_type: &str) -> String {
     }
 }
 
-pub fn execute(program_id: Option<&String>) {
+pub fn execute(program_id: Option<&str>) {
     // 1. Resolve workspace root
     let current_dir = std::env::current_dir().unwrap();
     let workspace_root = if current_dir.join("Naclac.toml").exists() {
@@ -135,12 +135,9 @@ pub fn execute(program_id: Option<&String>) {
         std::process::exit(1);
     }
 
-    // 2. Resolve program to generate for
-    let mut target_json_path = None;
-    let mut program_name = String::new();
+    let mut target_json_paths = Vec::new();
 
     if let Some(pid) = program_id {
-        // Maybe the user passed the program name instead of ID, search by generic match
         for entry in fs::read_dir(&target_idl_dir).unwrap() {
             if let Ok(entry) = entry {
                 let path = entry.path();
@@ -148,61 +145,54 @@ pub fn execute(program_id: Option<&String>) {
                     let content = fs::read_to_string(&path).unwrap();
                     let idl: Idl = serde_json::from_str(&content).unwrap();
                     if &idl.address == pid || &idl.metadata.name == pid {
-                        target_json_path = Some(path);
-                        program_name = idl.metadata.name.clone();
+                        target_json_paths.push((path, idl.metadata.name.clone()));
                         break;
                     }
                 }
             }
         }
     } else {
-        // Just pick the first json file we find (assuming mono-program for now, or we can generate for all)
         for entry in fs::read_dir(&target_idl_dir).unwrap() {
             if let Ok(entry) = entry {
                 let path = entry.path();
                 if path.extension().unwrap_or_default() == "json" {
                     let content = fs::read_to_string(&path).unwrap();
                     let idl: Idl = serde_json::from_str(&content).unwrap();
-                    target_json_path = Some(path);
-                    program_name = idl.metadata.name.clone();
-                    break;
+                    target_json_paths.push((path, idl.metadata.name.clone()));
                 }
             }
         }
     }
 
-    let json_path = match target_json_path {
-        Some(p) => p,
-        None => {
-            eprintln!("❌ Error: No IDL found. Run naclac build first.");
-            std::process::exit(1);
+    if target_json_paths.is_empty() {
+        eprintln!("❌ Error: No IDL found. Run naclac build first.");
+        std::process::exit(1);
+    }
+
+    for (json_path, program_name) in target_json_paths {
+        println!("🛠 Generating TypeScript Client SDK for '{}'...", program_name);
+
+        let content = fs::read_to_string(&json_path).unwrap();
+        let idl: Idl = serde_json::from_str(&content).unwrap();
+
+        let clients_dir = workspace_root.join(format!("clients/src/generated/{}", program_name));
+        if clients_dir.exists() {
+            fs::remove_dir_all(&clients_dir).unwrap();
         }
-    };
+        fs::create_dir_all(&clients_dir.join("instructions")).unwrap();
+        fs::create_dir_all(&clients_dir.join("accounts")).unwrap();
+        fs::create_dir_all(&clients_dir.join("types")).unwrap();
+        fs::create_dir_all(&clients_dir.join("idl")).unwrap();
 
-    println!("🛠 Generating TypeScript Client SDK from IDL...");
-
-    let content = fs::read_to_string(&json_path).unwrap();
-    let idl: Idl = serde_json::from_str(&content).unwrap();
-
-    // 3. Scaffold output directory
-    let clients_dir = workspace_root.join("clients/src/generated");
-    if clients_dir.exists() {
-        fs::remove_dir_all(&clients_dir).unwrap();
-    }
-    fs::create_dir_all(&clients_dir.join("instructions")).unwrap();
-    fs::create_dir_all(&clients_dir.join("accounts")).unwrap();
-    fs::create_dir_all(&clients_dir.join("types")).unwrap();
-    fs::create_dir_all(&clients_dir.join("idl")).unwrap();
-
-    let target_types_dir = workspace_root.join("target/types");
-    let ts_idl_path = target_types_dir.join(format!("{}.ts", program_name));
-    if ts_idl_path.exists() {
-        fs::copy(&ts_idl_path, clients_dir.join(format!("idl/{}.ts", program_name))).unwrap();
-    }
-    let json_idl_path = workspace_root.join(format!("target/idl/{}.json", program_name));
-    if json_idl_path.exists() {
-        fs::copy(&json_idl_path, clients_dir.join(format!("idl/{}.json", program_name))).unwrap();
-    }
+        let target_types_dir = workspace_root.join("target/types");
+        let ts_idl_path = target_types_dir.join(format!("{}.ts", program_name));
+        if ts_idl_path.exists() {
+            fs::copy(&ts_idl_path, clients_dir.join(format!("idl/{}.ts", program_name))).unwrap();
+        }
+        let json_idl_path = workspace_root.join(format!("target/idl/{}.json", program_name));
+        if json_idl_path.exists() {
+            fs::copy(&json_idl_path, clients_dir.join(format!("idl/{}.json", program_name))).unwrap();
+        }
 
     let header = "// 🛑 DO NOT EDIT - AUTO-GENERATED\n\n";
 
@@ -445,5 +435,6 @@ pub fn execute(program_id: Option<&String>) {
 
     fs::write(clients_dir.join("index.ts"), barrel).unwrap();
 
-    println!("✅ Client SDK successfully generated in clients/src/generated/");
+    println!("✅ Client SDK successfully generated in clients/src/generated/{}", program_name);
+    }
 }

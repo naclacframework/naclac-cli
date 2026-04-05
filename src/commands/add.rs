@@ -246,19 +246,6 @@ pub enum CounterError {
     } else {
         config_text.push_str(&format!("\n\n[programs.localnet]\n{} = \"{}\"", snake_name, address));
         fs::write(&config_path, config_text).unwrap();
-    }
-
-    let root_cargo_path = workspace_root.join("Cargo.toml");
-    if root_cargo_path.exists() {
-        let mut root_cargo = fs::read_to_string(&root_cargo_path).unwrap();
-        if let Some(pos) = root_cargo.find("members = [") {
-            let insert_idx = pos + "members = [".len();
-            root_cargo.insert_str(insert_idx, &format!("\n    \"programs/{}\",", snake_name));
-            fs::write(&root_cargo_path, root_cargo).unwrap();
-        }
-    }
-
-
     let type_name = {
         let mut c = snake_name.chars();
         match c.next() {
@@ -268,7 +255,7 @@ pub enum CounterError {
     };
 
     let test_ts = format!(r#"import * as naclac from "@naclac/client";
-import {{ {}Client, constants }} from "../clients/src/generated";
+import {{ {}Client, constants }} from "../clients/src/generated/{}";
 
 describe("Naclac {} Test", () => {{
   it("Initializes, Increments, and emits an Event", async () => {{

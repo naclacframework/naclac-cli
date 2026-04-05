@@ -18,6 +18,7 @@ enum Commands {
     Add { name: String },
     /// Builds the SBF binary and generates the IDL JSON
     Build {
+        program_id: Option<String>,
         #[arg(short, long)]
         generate_client: bool,
     },
@@ -26,7 +27,9 @@ enum Commands {
         program_id: Option<String>,
     },
     /// Deploys all programs in the workspace to the configured network
-    Deploy,
+    Deploy {
+        program_id: Option<String>,
+    },
     /// Runs the test suite defined in Naclac.toml
     Test {
         /// Optional specific test file to run (e.g., counter_test.test.ts)
@@ -125,9 +128,9 @@ fn main() {
     match &cli.command {
         Commands::Init { name } => commands::init::execute(name),
         Commands::Add { name } => commands::add::execute(name),
-        Commands::Build { generate_client } => commands::build::execute(*generate_client),
-        Commands::Generate { program_id } => commands::generate::execute(program_id.as_ref()),
-        Commands::Deploy => commands::deploy::execute(),
+        Commands::Build { program_id, generate_client } => commands::build::execute(program_id.as_deref(), *generate_client),
+        Commands::Generate { program_id } => commands::generate::execute(program_id.as_deref()),
+        Commands::Deploy { program_id } => commands::deploy::execute(program_id.as_deref()),
         Commands::Test { file } => commands::test::execute(file.as_deref()),
         Commands::Account { address } => commands::account::execute(address),
         Commands::Idl { action } => match action {

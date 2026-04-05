@@ -56,26 +56,35 @@ pub fn execute(hard: bool) {
         }
     } else {
         println!("🧹 Running safe workspace clean...");
-        // 1. Cargo clean under the hood
-        let _ = Command::new("cargo").arg("clean").status();
-        
-        // Wipe target/idl safely
-        let target_idl = current_dir.join("target/idl");
-        if target_idl.exists() {
-            let _ = fs::remove_dir_all(&target_idl);
-            println!("  🗑️  Removed: target/idl");
-        }
-        
-        // Wipe target/sbf-solana-solana (where .so files live)
-        let target_sbf = current_dir.join("target/sbf-solana-solana");
-        if target_sbf.exists() {
-            let _ = fs::remove_dir_all(&target_sbf);
-            println!("  🗑️  Removed: target/sbf-solana-solana");
-        }
 
-        let target_docs = current_dir.join("target/doc");
-        if target_docs.exists() {
-            let _ = fs::remove_dir_all(&target_docs);
+        let target_dir = current_dir.join("target");
+        if target_dir.exists() {
+            if let Ok(entries) = fs::read_dir(&target_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+                    
+                    if file_name == "deploy" {
+                        // Enter deploy and delete ONLY .so files (Preserve .json keypairs)
+                        if let Ok(deploy_entries) = fs::read_dir(&path) {
+                             for d_entry in deploy_entries.flatten() {
+                                 let d_path = d_entry.path();
+                                 if d_path.extension().unwrap_or_default() == "so" {
+                                      let _ = fs::remove_file(&d_path);
+                                 }
+                             }
+                        }
+                    } else {
+                        // Delete literally everything else natively created by Cargo/SBF
+                        if path.is_dir() {
+                            let _ = fs::remove_dir_all(&path);
+                        } else {
+                            let _ = fs::remove_file(&path);
+                        }
+                    }
+                }
+            }
+            println!("  🗑️  Removed compile caches iteratively from target/");
         }
 
         let cache = current_dir.join(".anchor");

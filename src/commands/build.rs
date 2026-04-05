@@ -112,7 +112,7 @@ struct IdlConstant {
     value: String,
 }
 
-pub fn execute(generate_client: bool) {
+pub fn execute(program_id: Option<&str>, generate_client: bool) {
     let current_dir = std::env::current_dir().unwrap();
 
     let workspace_root = if current_dir.join("Naclac.toml").exists() {
@@ -135,7 +135,8 @@ pub fn execute(generate_client: bool) {
             .unwrap()
             .filter_map(|entry| {
                 let path = entry.unwrap().path();
-                if path.is_dir() && path.join("src/lib.rs").exists() {
+                let is_target = program_id.map_or(true, |tgt| path.file_name().unwrap() == tgt);
+                if path.is_dir() && path.join("src/lib.rs").exists() && is_target {
                     Some(path)
                 } else {
                     None
@@ -220,9 +221,14 @@ pub fn execute(generate_client: bool) {
     }
 
     println!("🔨 Compiling Native SBF...");
-    let mut child = Command::new("cargo")
-        .arg("build-sbf")
-        .current_dir(&workspace_root)
+    let mut cmd = Command::new("cargo");
+    cmd.arg("build-sbf").current_dir(&workspace_root);
+
+    if let Some(tgt) = program_id {
+        cmd.arg("--manifest-path").arg(format!("programs/{}/Cargo.toml", tgt));
+    }
+
+    let mut child = cmd
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .spawn()

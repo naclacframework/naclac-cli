@@ -288,7 +288,7 @@ test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
     };
 
     let test_ts = format!(r#"import * as naclac from "@naclac/client";
-import {{ {}Client, constants }} from "../clients/src/generated";
+import {{ {}Client, constants }} from "../clients/src/generated/{}";
 
 describe("Naclac Counter Test", () => {{
   it("Initializes, Increments, and emits an Event", async () => {{
@@ -323,7 +323,7 @@ describe("Naclac Counter Test", () => {{
     console.log("   ✅ Test Passed!");
   }});
 }});
-"#, type_name, type_name);
+"#, type_name, name);
 
     fs::write(root.join("tsconfig.json"), r#"{
   "compilerOptions": {

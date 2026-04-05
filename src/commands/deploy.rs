@@ -1,7 +1,7 @@
 use std::fs;
 use std::process::Command;
 
-pub fn execute() {
+pub fn execute(program_id: Option<&str>) {
     let current_dir = std::env::current_dir().unwrap();
 
     let workspace_root = if current_dir.join("Naclac.toml").exists() {
@@ -53,12 +53,15 @@ pub fn execute() {
     let home_dir = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
     let expanded_wallet = wallet_setting.replace("~", &home_dir);
 
-    // Find all compiled .so files
     let mut so_files = Vec::new();
     for entry in fs::read_dir(&deploy_dir).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().unwrap_or_default() == "so" {
-            so_files.push(path);
+            let program_name = path.file_stem().unwrap().to_str().unwrap();
+            let is_target = program_id.map_or(true, |tgt| program_name == tgt);
+            if is_target {
+                so_files.push(path);
+            }
         }
     }
 
