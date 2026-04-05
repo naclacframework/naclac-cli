@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use std::io::{self, Write};
 
 pub fn execute(hard: bool) {

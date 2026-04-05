@@ -292,7 +292,7 @@ describe("Naclac {} Test", () => {{
     console.log("   ✅ Test Passed!");
   }});
 }});
-"#, type_name, type_name, type_name);
+"#, type_name, snake_name, type_name, type_name);
     fs::write(workspace_root.join(format!("tests/{}.test.ts", snake_name)), test_ts).unwrap();
 
     println!("✅ Securely mapped Program ID: {}", address);

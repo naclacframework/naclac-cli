@@ -323,7 +323,7 @@ describe("Naclac Counter Test", () => {{
     console.log("   ✅ Test Passed!");
   }});
 }});
-"#, type_name, name);
+"#, type_name, name, type_name);
 
     fs::write(root.join("tsconfig.json"), r#"{
   "compilerOptions": {
