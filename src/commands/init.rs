@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use heck::ToSnakeCase;
 
 pub fn execute(name: &str) {
     let root = Path::new(name);
@@ -12,7 +13,8 @@ pub fn execute(name: &str) {
 
     println!("🚀 Initializing Naclac Workspace: {}...", name);
 
-    let program_dir = root.join(format!("programs/{}", name));
+    let snake_name = name.to_snake_case();
+    let program_dir = root.join(format!("programs/{}", snake_name));
     fs::create_dir_all(program_dir.join("src/components")).unwrap();
     fs::create_dir_all(program_dir.join("src/systems")).unwrap();
     fs::create_dir_all(program_dir.join("src/instructions")).unwrap();
@@ -21,7 +23,7 @@ pub fn execute(name: &str) {
     fs::create_dir_all(&deploy_dir).unwrap();
 
     println!("🔑 Generating Program Keypair...");
-    let keypair_path = deploy_dir.join(format!("{}-keypair.json", name));
+    let keypair_path = deploy_dir.join(format!("{}-keypair.json", snake_name));
     Command::new("solana-keygen")
         .arg("new")
         .arg("--no-bip39-passphrase")
@@ -76,7 +78,7 @@ naclac-lang = "1.1.0"
 [lints.rust]
 unexpected_cfgs = {{ level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }}
 "#,
-        name
+        snake_name
     );
     fs::write(program_dir.join("Cargo.toml"), inner_cargo).unwrap();
 
@@ -102,7 +104,7 @@ pub mod {} {{
     }}
 }}
 "#,
-        program_id, name
+        program_id, snake_name
     );
     fs::write(program_dir.join("src/lib.rs"), lib_rs).unwrap();
 
@@ -246,7 +248,7 @@ wallet = "~/.config/solana/id.json"
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
 "#,
-        name, program_id
+        snake_name, program_id
     );
     fs::write(root.join("Naclac.toml"), naclac_toml).unwrap();
 
@@ -275,7 +277,7 @@ test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
   }}
 }}
 "#,
-        name = name
+        name = name.to_lowercase()
     );
     fs::write(root.join("package.json"), package_json).unwrap();
 
@@ -323,7 +325,7 @@ describe("Naclac Counter Test", () => {{
     console.log("   ✅ Test Passed!");
   }});
 }});
-"#, type_name, name, type_name);
+"#, type_name, snake_name, type_name);
 
     fs::write(root.join("tsconfig.json"), r#"{
   "compilerOptions": {
@@ -348,7 +350,7 @@ describe("Naclac Counter Test", () => {{
     )
     .unwrap();
     fs::write(
-        root.join(format!("tests/{}.test.ts", name)),
+        root.join(format!("tests/{}.test.ts", snake_name)),
         test_ts,
     )
     .unwrap();
