@@ -248,13 +248,7 @@ pub enum CounterError {
         fs::write(&config_path, config_text).unwrap();
     }
 
-    let type_name = {
-        let mut c = snake_name.chars();
-        match c.next() {
-            None => String::new(),
-            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        }
-    };
+    let type_name = snake_name.to_upper_camel_case();
 
     let test_ts = format!(r#"import * as naclac from "@naclac/client";
 import {{ {}Client, constants }} from "../clients/src/generated/{}";

@@ -281,13 +281,7 @@ test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
     );
     fs::write(root.join("package.json"), package_json).unwrap();
 
-    let type_name = {
-        let mut c = name.chars();
-        match c.next() {
-            None => String::new(),
-            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        }
-    };
+    let type_name = snake_name.to_upper_camel_case();
 
     let test_ts = format!(r#"import * as naclac from "@naclac/client";
 import {{ {}Client, constants }} from "../clients/src/generated/{}";
