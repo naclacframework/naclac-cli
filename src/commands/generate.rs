@@ -106,14 +106,24 @@ pub struct IdlConstant {
 
 // Map IDL type to TS type
 fn map_type_to_ts(idl_type: &str) -> String {
-    match idl_type {
+    let clean_type = idl_type.replace(" ", "");
+    if clean_type.starts_with("Option<") && clean_type.ends_with(">") {
+        let inner = &clean_type[7..clean_type.len() - 1];
+        return format!("{} | null", map_type_to_ts(inner));
+    }
+    if clean_type.starts_with("Vec<") && clean_type.ends_with(">") {
+        let inner = &clean_type[4..clean_type.len() - 1];
+        return format!("Array<{}>", map_type_to_ts(inner));
+    }
+
+    match clean_type.as_str() {
         "u8" | "u16" | "u32" | "i8" | "i16" | "i32" | "f32" | "f64" => "number".to_string(),
         "u64" | "u128" | "i64" | "i128" => "bigint | number".to_string(),
         "bool" => "boolean".to_string(),
         "string" | "String" => "string".to_string(),
         "publicKey" | "Pubkey" => "naclac.Address | string".to_string(),
         "bytes" => "Uint8Array".to_string(),
-        _ => idl_type.to_string(), // Probably a custom type
+        _ => clean_type.to_string(), // Probably a custom type
     }
 }
 
@@ -198,29 +208,70 @@ pub fn execute(program_id: Option<&str>) {
 
     // programId replaced by constants.ts
 
-    // types/index.ts
-    let mut types_content = header.to_string();
-    types_content.push_str("import * as naclac from \"@naclac/client\";\n\n");
+    // types/accounts.ts
+    let mut accounts_content = header.to_string();
+    accounts_content.push_str("import * as naclac from \"@naclac/client\";\n\n");
     for type_def in &idl.accounts {
-        types_content.push_str(&format!("export interface {} {{\n", type_def.name));
+        accounts_content.push_str(&format!("export interface {} {{\n", type_def.name));
         for field in &type_def.ty.fields {
-            types_content.push_str(&format!("  {}: {};\n", field.name, map_type_to_ts(&field.ty)));
+            accounts_content.push_str(&format!("  {}: {};\n", field.name, map_type_to_ts(&field.ty)));
         }
-        types_content.push_str("}\n\n");
+        accounts_content.push_str("}\n\n");
     }
-    
-    // Support Event Definitions in types
+    fs::write(clients_dir.join("types/accounts.ts"), accounts_content).unwrap();
+
+    // types/events.ts
+    let mut events_content = header.to_string();
+    events_content.push_str("import * as naclac from \"@naclac/client\";\n\n");
     if !idl.events.is_empty() {
         for event_def in &idl.events {
-            types_content.push_str(&format!("export interface {} {{\n", event_def.name));
+            events_content.push_str(&format!("export interface {} {{\n", event_def.name));
             for field in &event_def.fields {
-                types_content.push_str(&format!("  {}: {};\n", field.name, map_type_to_ts(&field.ty)));
+                events_content.push_str(&format!("  {}: {};\n", field.name, map_type_to_ts(&field.ty)));
             }
-            types_content.push_str("}\n\n");
+            events_content.push_str("}\n\n");
+            
+            events_content.push_str(&format!("export function add{}Listener(\n", event_def.name));
+            events_content.push_str("  program: naclac.Program,\n");
+            events_content.push_str(&format!("  callback: (event: {}, slot: number, signature: string) => void\n", event_def.name));
+            events_content.push_str("): number {\n");
+            events_content.push_str(&format!("  return program.addEventListener(\"{}\", callback);\n", event_def.name));
+            events_content.push_str("}\n\n");
         }
+        events_content.push_str("export function removeListener(program: naclac.Program, listenerId: number) {\n");
+        events_content.push_str("  program.removeEventListener(listenerId);\n");
+        events_content.push_str("}\n");
     }
-    
-    fs::write(clients_dir.join("types/index.ts"), types_content).unwrap();
+    fs::write(clients_dir.join("types/events.ts"), events_content).unwrap();
+
+    // types/constants.ts
+    let mut constants_content = header.to_string();
+    constants_content.push_str("import * as naclac from \"@naclac/client\";\n\n");
+    constants_content.push_str(&format!("export const PROGRAM_ID = naclac.address(\"{}\");\n", idl.address));
+    for constant in &idl.constants {
+        constants_content.push_str(&format!("export const {}: {} = {};\n", constant.name, map_type_to_ts(&constant.ty), constant.value));
+    }
+    fs::write(clients_dir.join("types/constants.ts"), constants_content).unwrap();
+
+    // types/errors.ts
+    let mut errors_content = header.to_string();
+    errors_content.push_str("export const ProgramErrors = {\n");
+    for err in &idl.errors {
+        let msg = err.msg.clone().unwrap_or_else(|| "".to_string());
+        errors_content.push_str(&format!("  {}: {{ name: \"{}\", msg: \"{}\" }},\n", err.code, err.name, msg));
+    }
+    errors_content.push_str("} as const;\n");
+    fs::write(clients_dir.join("types/errors.ts"), errors_content).unwrap();
+
+    // types/index.ts
+    let mut types_index = header.to_string();
+    types_index.push_str("export * from \"./accounts\";\n");
+    if !idl.events.is_empty() {
+        types_index.push_str("export * from \"./events\";\n");
+    }
+    types_index.push_str("export * from \"./constants\";\n");
+    types_index.push_str("export * from \"./errors\";\n");
+    fs::write(clients_dir.join("types/index.ts"), types_index).unwrap();
 
     // 5. Generate Instructions
     let mut instructions_index = header.to_string();
@@ -310,12 +361,7 @@ pub fn execute(program_id: Option<&str>) {
     if !idl.accounts.is_empty() {
         client_content.push_str("import * as accounts from \"./accounts\";\n");
     }
-    if !idl.events.is_empty() {
-        client_content.push_str("import * as events from \"./events\";\n");
-        client_content.push_str("import type { ");
-        client_content.push_str(&idl.events.iter().map(|e| e.name.clone()).collect::<Vec<_>>().join(", "));
-        client_content.push_str(" } from \"./types\";\n");
-    }
+    client_content.push_str("import * as types from \"./types\";\n");
     
     client_content.push_str(&format!("\nexport class {}Client {{\n", type_name));
     client_content.push_str("  public program: naclac.Program;\n");
@@ -325,9 +371,8 @@ pub fn execute(program_id: Option<&str>) {
     if !idl.accounts.is_empty() {
         client_content.push_str("  public accounts = accounts;\n");
     }
-    if !idl.events.is_empty() {
-        client_content.push_str("  public events = events;\n");
-    }
+    client_content.push_str("  public types = types;\n");
+    client_content.push_str("  public errors = types.ProgramErrors;\n");
 
     client_content.push_str("\n  constructor(providerOrCluster: naclac.NaclacProvider | \"devnet\" | \"mainnet\" | \"localnet\", payer?: naclac.KeyPairSigner) {\n");
     client_content.push_str("    let provider: naclac.NaclacProvider;\n");
@@ -373,13 +418,13 @@ pub fn execute(program_id: Option<&str>) {
 
     // Flatten events
     for event in &idl.events {
-        client_content.push_str(&format!("  public on{}(callback: (event: {}, slot: number, signature: string) => void) {{\n", event.name, event.name));
-        client_content.push_str(&format!("    return events.add{}Listener(this.program, callback);\n", event.name));
+        client_content.push_str(&format!("  public on{}(callback: (event: types.{}, slot: number, signature: string) => void) {{\n", event.name, event.name));
+        client_content.push_str(&format!("    return types.add{}Listener(this.program, callback);\n", event.name));
         client_content.push_str("  }\n\n");
     }
     if !idl.events.is_empty() {
         client_content.push_str("  public removeEventListener(listenerId: number) {\n");
-        client_content.push_str("    return events.removeListener(this.program, listenerId);\n");
+        client_content.push_str("    return types.removeListener(this.program, listenerId);\n");
         client_content.push_str("  }\n");
     }
 
@@ -390,45 +435,12 @@ pub fn execute(program_id: Option<&str>) {
     // 8. Conditional Generation
     let mut barrel = header.to_string();
     barrel.push_str(&format!("export {{ IDL, type {} }} from \"./idl/{}\";\n", type_name, program_name));
-    barrel.push_str("export * from \"./types\";\n");
+    barrel.push_str("export * as types from \"./types\";\n");
     if !idl.instructions.is_empty() {
         barrel.push_str("export * as instructions from \"./instructions\";\n");
     }
     if !idl.accounts.is_empty() {
         barrel.push_str("export * as accounts from \"./accounts\";\n");
-    }
-
-    let mut constants_content = header.to_string();
-    constants_content.push_str("import * as naclac from \"@naclac/client\";\n\n");
-    constants_content.push_str(&format!("export const PROGRAM_ID = naclac.address(\"{}\");\n", idl.address));
-
-    for constant in &idl.constants {
-        constants_content.push_str(&format!("export const {}: {} = {};\n", constant.name, map_type_to_ts(&constant.ty), constant.value));
-    }
-    fs::write(clients_dir.join("constants.ts"), constants_content).unwrap();
-    barrel.push_str("export * as constants from \"./constants\";\n");
-
-    if !idl.events.is_empty() {
-        let mut events_content = header.to_string();
-        events_content.push_str("import * as naclac from \"@naclac/client\";\n");
-        events_content.push_str("import type { ");
-        events_content.push_str(&idl.events.iter().map(|e| e.name.clone()).collect::<Vec<_>>().join(", "));
-        events_content.push_str(" } from \"./types\";\n\n");
-
-        for event in &idl.events {
-            events_content.push_str(&format!("export function add{}Listener(\n", event.name));
-            events_content.push_str("  program: naclac.Program,\n");
-            events_content.push_str(&format!("  callback: (event: {}, slot: number, signature: string) => void\n", event.name));
-            events_content.push_str("): number {\n");
-            events_content.push_str(&format!("  return program.addEventListener(\"{}\", callback);\n", event.name));
-            events_content.push_str("}\n\n");
-        }
-        events_content.push_str("export function removeListener(program: naclac.Program, listenerId: number) {\n");
-        events_content.push_str("  program.removeEventListener(listenerId);\n");
-        events_content.push_str("}\n");
-
-        fs::write(clients_dir.join("events.ts"), events_content).unwrap();
-        barrel.push_str("export * as events from \"./events\";\n");
     }
     
     barrel.push_str("export * from \"./client\";\n");
