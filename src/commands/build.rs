@@ -585,6 +585,10 @@ pub fn execute(program_id: Option<&str>, generate_client: bool) {
                                     let ty_node = &*pat_type.ty;
                                     let type_str = quote::quote!(#ty_node).to_string();
                                     let is_account_info = type_str.contains("AccountInfo");
+                                    // &[AccountInfo] is a slice — the Naclac convention for
+                                    // remaining_accounts (passed as writable batch targets).
+                                    let is_account_slice = type_str.contains("[")
+                                        && type_str.contains("AccountInfo");
                                     let is_primitive_ref = type_str.contains("u8")
                                         || type_str.contains("u16")
                                         || type_str.contains("u32")
@@ -597,9 +601,11 @@ pub fn execute(program_id: Option<&str>, generate_client: bool) {
                                         type_str.contains("&") && !is_primitive_ref;
 
                                     if is_account_info || is_custom_component {
+                                        // Slice of AccountInfos = remaining_accounts; always writable.
+                                        let effective_is_mut = is_mut || is_account_slice;
                                         accounts.push(IdlAccount {
                                             name: arg_name,
-                                            is_mut,
+                                            is_mut: effective_is_mut,
                                             is_signer,
                                             pda: None,
                                         });
