@@ -78,6 +78,7 @@ pub fn execute(target_file: Option<&str>) {
         .arg(shell_flag)
         .arg(&test_script)
         .current_dir(&workspace_root)
+        .env("TS_NODE_TRANSPILE_ONLY", "1") // 🌟 Bypass sluggish TypeScript type-checker 🌟
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .spawn()
