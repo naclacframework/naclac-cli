@@ -290,6 +290,7 @@ pub fn execute(program_id: Option<&str>) {
         // Args
         ix_content.push_str("  args: {\n");
         for arg in &ix.args {
+            if arg.name == "ctx" { continue; }
             ix_content.push_str(&format!("    {}: {};\n", arg.name, map_type_to_ts(&arg.ty)));
         }
         ix_content.push_str("  },\n");
@@ -385,10 +386,10 @@ pub fn execute(program_id: Option<&str>) {
     client_content.push_str("    this.program = new naclac.Program(IDL, provider);\n");
     client_content.push_str("  }\n\n");
 
-    // Flatten instructions
     for ix in &idl.instructions {
         client_content.push_str(&format!("  public {}(args: {{\n", ix.name));
         for arg in &ix.args {
+            if arg.name == "ctx" { continue; }
             client_content.push_str(&format!("    {}: {};\n", arg.name, map_type_to_ts(&arg.ty)));
         }
         client_content.push_str("  }, accounts: {\n");

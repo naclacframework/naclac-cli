@@ -546,13 +546,14 @@ pub fn execute(program_id: Option<&str>, generate_client: bool) {
                 let code = fs::read_to_string(&ix_path).unwrap();
                 let syntax_tree = syn::parse_file(&code).unwrap();
 
-                for item in syntax_tree.items {
+                for item in &syntax_tree.items {
                     if let syn::Item::Fn(item_fn) = item {
                         if item_fn.sig.ident.to_string() == func_name {
                             let mut accounts = Vec::new();
                             let mut args = Vec::new();
-                            let mut raw_pdas = Vec::new();
-                            for arg in item_fn.sig.inputs {
+                            let mut context_struct_name = Option::<String>::None;
+
+                            for arg in &item_fn.sig.inputs {
                                 if let syn::FnArg::Typed(pat_type) = arg {
                                     let raw_arg_name =
                                         if let syn::Pat::Ident(pat_ident) = &*pat_type.pat {
@@ -563,97 +564,96 @@ pub fn execute(program_id: Option<&str>, generate_client: bool) {
 
                                     let arg_name = raw_arg_name.to_lower_camel_case();
 
-                                    let mut is_mut = false;
-                                    let mut is_signer = false;
-                                    for attr in &pat_type.attrs {
-                                        if attr.path().is_ident("mut")
-                                            || attr.path().is_ident("writable")
-                                        {
-                                            is_mut = true;
-                                        }
-                                        if attr.path().is_ident("signer") {
-                                            is_signer = true;
-                                        }
-                                        if attr.path().is_ident("pda") {
-                                            raw_pdas.push((
-                                                arg_name.clone(),
-                                                quote::quote!(#attr).to_string(),
-                                            ));
-                                        }
-                                    }
-
                                     let ty_node = &*pat_type.ty;
                                     let type_str = quote::quote!(#ty_node).to_string();
-                                    let is_account_info = type_str.contains("AccountInfo");
-                                    // &[AccountInfo] is a slice — the Naclac convention for
-                                    // remaining_accounts (passed as writable batch targets).
-                                    let is_account_slice = type_str.contains("[")
-                                        && type_str.contains("AccountInfo");
-                                    let is_primitive_ref = type_str.contains("u8")
-                                        || type_str.contains("u16")
-                                        || type_str.contains("u32")
-                                        || type_str.contains("u64")
-                                        || type_str.contains("i64")
-                                        || type_str.contains("str")
-                                        || type_str.contains("String")
-                                        || type_str.contains("bool");
-                                    let is_custom_component =
-                                        type_str.contains("&") && !is_primitive_ref;
+                                    let clean_type_str = type_str.replace(" ", "");
 
-                                    if is_account_info || is_custom_component {
-                                        // Slice of AccountInfos = remaining_accounts; always writable.
-                                        let effective_is_mut = is_mut || is_account_slice;
-                                        accounts.push(IdlAccount {
-                                            name: arg_name,
-                                            is_mut: effective_is_mut,
-                                            is_signer,
-                                            pda: None,
-                                        });
-                                    } else {
-                                        args.push(IdlField {
-                                            name: arg_name,
-                                            ty: rust_type_to_idl(&type_str),
-                                        });
+                                    if clean_type_str.starts_with("Context<") {
+                                        if let Some(start) = clean_type_str.find('<') {
+                                            if let Some(end) = clean_type_str.rfind('>') {
+                                                context_struct_name = Some(clean_type_str[start + 1..end].to_string());
+                                            }
+                                        }
+                                        continue; // Skip ctx in args
                                     }
+
+                                    args.push(IdlField {
+                                        name: arg_name,
+                                        ty: rust_type_to_idl(&type_str),
+                                    });
                                 }
                             }
 
-                            // 🌟 NEW: Flawless string extraction for PDA Seeds
-                            for (acc_name, attr_str) in raw_pdas {
-                                if let Some(start) = attr_str.find('(') {
-                                    if let Some(end) = attr_str.rfind(')') {
-                                        let inside = &attr_str[start + 1..end];
-                                        // Remove array brackets
-                                        let clean_str = inside.replace("[", "").replace("]", "");
+                            if let Some(struct_name) = context_struct_name {
+                                for item2 in &syntax_tree.items {
+                                    if let syn::Item::Struct(item_struct) = item2 {
+                                        if item_struct.ident.to_string() == struct_name {
+                                            for field in &item_struct.fields {
+                                                let field_name = field.ident.as_ref().unwrap().to_string();
+                                                let mut is_mut = false;
+                                                let mut is_signer = false;
+                                                let mut pda_attr: Option<String> = None;
 
-                                        let mut seeds = Vec::new();
-                                        for part in clean_str.split(',') {
-                                            let part = part
-                                                .trim()
-                                                .replace(".key()", "")
-                                                .replace(".key", "");
-                                            if part.is_empty() {
-                                                continue;
-                                            }
+                                                let ty_node = &field.ty;
+                                                let field_ty_str = quote::quote!(#ty_node).to_string().replace(" ", "");
 
-                                            if part.starts_with("b\"") && part.ends_with("\"") {
-                                                // It's a byte string (Const) - perfectly matches Anchor!
-                                                let val =
-                                                    part[2..part.len() - 1].as_bytes().to_vec();
-                                                seeds.push(IdlSeed::Const { value: val });
-                                            } else {
-                                                if accounts.iter().any(|a| a.name == part) {
-                                                    seeds.push(IdlSeed::Account { path: part });
-                                                } else {
-                                                    seeds.push(IdlSeed::Arg { path: part });
+                                                if field_ty_str.starts_with("Signer<") || field_ty_str == "Signer" {
+                                                    is_signer = true;
                                                 }
-                                            }
-                                        }
 
-                                        if let Some(acc) =
-                                            accounts.iter_mut().find(|a| a.name == acc_name)
-                                        {
-                                            acc.pda = Some(IdlPda { seeds });
+                                                for attr in &field.attrs {
+                                                    let attr_str = quote::quote!(#attr).to_string();
+                                                    if attr_str.contains("mut") {
+                                                        is_mut = true;
+                                                    }
+                                                    if attr_str.contains("seeds") {
+                                                        pda_attr = Some(attr_str.clone());
+                                                    }
+                                                }
+
+                                                // 🌟 NEW: Extract PDA Seeds flawlessly from #[account(seeds = [...])]
+                                                let mut pda = None;
+                                                if let Some(attr_str) = pda_attr {
+                                                    let mut seeds = Vec::new();
+                                                    if let Some(seeds_start) = attr_str.find("seeds = [") {
+                                                        let rest = &attr_str[seeds_start + 9..];
+                                                        if let Some(seeds_end) = rest.find(']') {
+                                                            let seeds_str = &rest[..seeds_end];
+                                                            
+                                                            for chunk in seeds_str.split(',') {
+                                                                let part = chunk.trim();
+                                                                if part.is_empty() { continue; }
+                                                                
+                                                                // Clean up typical Naclac macro traits
+                                                                let part = part.replace(".load()?", "").replace(".key()", "").replace(".key", "").replace(".to_le_bytes()", "").replace(".as_ref()", "");
+                                                                let part = part.replace("&", "");
+
+                                                                if part.starts_with("b\"") || part.starts_with("\"") {
+                                                                    let val_str = part.trim_matches(|c| c == 'b' || c == '"');
+                                                                    seeds.push(IdlSeed::Const { value: val_str.as_bytes().to_vec() });
+                                                                } else if part.starts_with("SEED_") {
+                                                                    seeds.push(IdlSeed::Arg { path: part });
+                                                                } else {
+                                                                    // It's likely a reference to another account array or arg
+                                                                    if part.ends_with("_account") || part == "pool" || part == "protocol" {
+                                                                        seeds.push(IdlSeed::Account { path: part });
+                                                                    } else {
+                                                                        seeds.push(IdlSeed::Arg { path: part });
+                                                                    }
+                                                                }
+                                                            }
+                                                            pda = Some(IdlPda { seeds });
+                                                        }
+                                                    }
+                                                }
+
+                                                accounts.push(IdlAccount {
+                                                    name: field_name.to_lower_camel_case(),
+                                                    is_mut,
+                                                    is_signer,
+                                                    pda,
+                                                });
+                                            }
                                         }
                                     }
                                 }
